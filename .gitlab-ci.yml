@@ -1,0 +1,69 @@
+stages:
+- test
+- build
+- deploy
+
+
+
+docker-test-master:
+  stage: test
+  image: python:3.7
+  script:
+    - apt-get update -q -y
+    - apt-get install -y python-pip
+    - python -V
+    - pip install -r requirements.txt
+    - python manage.py migrate --noinput
+    - python manage.py test --with-xunit
+    - coverage run --source='.' manage.py test
+    - coverage xml -o coverage-report.xml
+    - coverage html
+    - coverage report
+  coverage: "/TOTAL.+ ([0-9]{1,3}%)/"
+  artifacts:
+    reports:
+      cobertura: coverage-report.xml
+      junit: nosetests.xml
+    paths:
+      - htmlcov
+    expire_in: 5 days
+
+
+docker-build-master:
+  image: docker:latest
+  stage: build
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - docker build --pull -t "$CI_REGISTRY_IMAGE" .
+    - docker push "$CI_REGISTRY_IMAGE"
+  only:
+    - master
+
+docker-deploy-master:
+  image: docker:latest
+  stage: deploy
+  before_script:
+    - apk add --update curl && rm -rf /var/cache/apl/*
+  script:
+    - curl -X POST https://\$dlddemoapp5:5mdAMwyHm1kNoCzK744yW8kgW1hscN6SHDLJJSfW57LE6txbjJtrDR9klJlc@dlddemoapp5.scm.azurewebsites.net/docker/hook -d -H
+
+pages:
+  stage: deploy
+  image: python:3.7
+  dependencies:
+    - docker-test-master
+  script:
+    - mv htmlcov/ public/
+  artifacts:
+    paths:
+      - public
+    expire_in: 5 days
+  only:
+    - master
+
+include:
+  - template: SAST.gitlab-ci.yml
+
